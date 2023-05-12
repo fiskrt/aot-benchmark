@@ -31,10 +31,10 @@ class AOTEngine(nn.Module):
         self.restart_engine()
 
     def forward(self,
-                all_frames,
-                all_masks,
-                batch_size,
-                obj_nums,
+                all_frames, # f32   B*T x C x H x W (C=3 because of RGB?)
+                all_masks,  # int32 B*T x 1 x H x W (range [0, max(obj_nums)])
+                batch_size, 
+                obj_nums,   # list of number of objects in each batch
                 step=0,
                 tf_board=False,
                 use_prev_pred=False,
@@ -52,6 +52,7 @@ class AOTEngine(nn.Module):
         self.add_reference_frame(frame_step=0, obj_nums=obj_nums)
 
         grad_state = torch.no_grad if aux_weight == 0 else torch.enable_grad
+        # process reference frame
         with grad_state():
             ref_aux_loss, ref_aux_mask = self.generate_loss_mask(
                 self.offline_masks[self.frame_step], step)
@@ -83,6 +84,7 @@ class AOTEngine(nn.Module):
             self.offline_masks[self.frame_step], step, return_prob=True)
         curr_losses.append(curr_loss)
         curr_masks.append(curr_mask)
+        # Process rest of the T-3 frames?
         for _ in range(self.total_offline_frame_num - 3):
             self.update_short_term_memory(
                 curr_mask if not use_prev_prob else curr_prob,
@@ -109,15 +111,21 @@ class AOTEngine(nn.Module):
 
     def _init_losses(self):
         cfg = self.cfg
+        from networks.layers.loss import CrossEntropyLoss, SoftJaccordLoss, ProjectionLoss
 
-        from networks.layers.loss import CrossEntropyLoss, SoftJaccordLoss
-        bce_loss = CrossEntropyLoss(
-            cfg.TRAIN_TOP_K_PERCENT_PIXELS,
-            cfg.TRAIN_HARD_MINING_RATIO * cfg.TRAIN_TOTAL_STEPS)
-        iou_loss = SoftJaccordLoss()
-
-        losses = [bce_loss, iou_loss]
-        loss_weights = [0.5, 0.5]
+        if cfg.ONLY_PROJ_LOSS:
+            print('Initialized projection loss only for training!')
+            proj_loss = ProjectionLoss()
+            losses = [proj_loss]
+            loss_weights = [1]
+        else:
+            print('Initialized BCE + dice loss for training!')
+            bce_loss = CrossEntropyLoss(
+                cfg.TRAIN_TOP_K_PERCENT_PIXELS,
+                cfg.TRAIN_HARD_MINING_RATIO * cfg.TRAIN_TOTAL_STEPS)
+            iou_loss = SoftJaccordLoss()
+            losses = [bce_loss, iou_loss]
+            loss_weights = [0.5, 0.5]
 
         self.losses = nn.ModuleList(losses)
         self.loss_weights = loss_weights
@@ -145,6 +153,10 @@ class AOTEngine(nn.Module):
         return curr_enc_embs, curr_one_hot_mask
 
     def offline_encoder(self, all_frames, all_masks=None):
+        """ My
+            This is like a backbone feature extractor (encoder).
+            But it also does something with the masks.
+        """
         self.enable_offline_enc = True
         self.offline_frames = all_frames.size(0) // self.batch_size
 
@@ -396,6 +408,12 @@ class AOTEngine(nn.Module):
             return pred_mask, pred_prob
 
     def calculate_current_loss(self, gt_mask, step):
+        """
+            gt_mask: B x 1 x H x W
+            with int64 values in [0, 1, ..., max(self.obj_nums)]
+
+            self.obj_nums: num_objs in each batch. List of length B
+        """
         pred_id_logits = self.pred_id_logits
 
         pred_id_logits = F.interpolate(pred_id_logits,
