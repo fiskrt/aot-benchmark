@@ -115,17 +115,83 @@ class DiceLoss(nn.Module):
         return total_loss
 
 
+def dice_coefficient(x, target):
+    assert (x<=1.).all() and (x>=0.).all(), 'probability not in [0,1]'
+    assert (target<=1.).all() and (target>=0.).all(), 'probability not in [0,1]'
+    assert ((target == 1.) | (target == 0.)).all(), 'mask not 0,1'
+
+    eps = 1
+    n_inst = x.size(0)
+    x = x.reshape(n_inst, -1)
+    target = target.reshape(n_inst, -1)
+    intersection = (x * target).sum(dim=1) 
+    union = (x ** 2.0).sum(dim=1) + (target ** 2.0).sum(dim=1)
+    loss = 1. - ((2 * intersection + eps) / (union + eps))
+    return loss
+
+def compute_project_term(mask_scores, gt_bitmasks):
+    # mask_scores [0,1] , gt_bitmasks = {0,1}
+    # mask_scores: B*n_obj x 1 x H x W
+    mask_losses_y = dice_coefficient(
+        mask_scores.max(dim=2, keepdim=True)[0],
+        gt_bitmasks.max(dim=2, keepdim=True)[0]
+    )
+    mask_losses_x = dice_coefficient(
+        mask_scores.max(dim=3, keepdim=True)[0],
+        gt_bitmasks.max(dim=3, keepdim=True)[0]
+    )
+    return (mask_losses_x + mask_losses_y).mean()
+
+
+class ProjectionLoss(nn.Module):
+    def __init__(self, ignore_index=255):
+        super().__init__()
+    
+    def forward(self, logits, labels, step=None):
+        """
+            logits: list of logits? float 1 x n_obj x H x W
+            labels: list of labels? int64 1 x H x W
+
+            TODO: pass B*n_obj into loss without loop
+        """
+        total_loss = []
+        for logit, label in zip(logits, labels): 
+            logit = F.softmax(logit, dim=1)
+            
+            # Number of classes C incuding background
+            n_obj = logit.shape[1]
+            # n_obj x H x W
+            label_one_hot = torch.zeros((n_obj, *label.shape[1:]), dtype=float, device=logit.device)
+            # Turn labels into one-hot per class
+            for i in range(n_obj):
+                label_one_hot[i] = (label == i).float()
+            
+            # Turn into n_obj x 1 x H x W
+            logit = logit.permute(1,0,2,3)
+
+            loss = compute_project_term(logit, label_one_hot.unsqueeze(1))
+            total_loss.append(loss)
+        
+        return torch.stack(total_loss, dim=0)
+
+
 class SoftJaccordLoss(nn.Module):
     def __init__(self, ignore_index=255):
         super(SoftJaccordLoss, self).__init__()
         self.ignore_index = ignore_index
 
     def forward(self, tmp_dic, label_dic, step=None):
+        """
+            tmp_dic: list of logits? 1xn_objxHxW
+            label_dic: list of labels? int64 1xHxW
+        """
         total_loss = []
         for idx in range(len(tmp_dic)):
             pred = tmp_dic[idx]
             label = label_dic[idx]
-            pred = F.softmax(pred, dim=1)
+            pred = F.softmax(pred, dim=1) # make the logits into probability along the object dimension
+            # so now the for every pixel, we have a probability distribution over the objects.
+            # pred[:,obj1] + pred[:,obj2] + ... = 1
             label = label.view(1, 1, pred.size()[2], pred.size()[3])
             loss = tversky_loss(*flatten_probas(pred,
                                                 label,
@@ -154,6 +220,10 @@ class CrossEntropyLoss(nn.Module):
                                               reduction='none')
 
     def forward(self, dic_tmp, y, step):
+        """
+            dic_tmp: list of tensors, each tensor is of shape [1, ?, H, W]
+            y: 1 x H x W
+        """
         total_loss = []
         for i in range(len(dic_tmp)):
             pred_logits = dic_tmp[i]
