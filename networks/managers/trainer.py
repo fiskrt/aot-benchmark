@@ -475,7 +475,7 @@ class Trainer(object):
                     start = time.time()
                     self.scaler.scale(loss).backward()
                     end = time.time()
-                    print(end-start)
+                    #print(end-start)
                     self.scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(),
                                                    cfg.TRAIN_CLIP_GRAD_NORM)
