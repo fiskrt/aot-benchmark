@@ -13,6 +13,7 @@ class DefaultEngineConfig():
         self.STAGE_NAME = 'YTB'
 
         self.DATASETS = ['youtubevos']
+        self.ONLY_PROJ_LOSS = True
         self.DATA_WORKERS = 8
         self.DATA_RANDOMCROP = (465,
                                 465) if self.MODEL_ALIGN_CORNERS else (464,
@@ -23,7 +24,7 @@ class DefaultEngineConfig():
         self.DATA_MIN_SCALE_FACTOR = 0.7
         self.DATA_MAX_SCALE_FACTOR = 1.3
         self.DATA_RANDOM_REVERSE_SEQ = True
-        self.DATA_SEQ_LEN = 5
+        self.DATA_SEQ_LEN = 5 
         self.DATA_DAVIS_REPEAT = 5
         self.DATA_RANDOM_GAP_DAVIS = 12  # max frame interval between two sampled frames for DAVIS (24fps)
         self.DATA_RANDOM_GAP_YTB = 3  # max frame interval between two sampled frames for YouTube-VOS (6fps)
@@ -31,8 +32,8 @@ class DefaultEngineConfig():
 
         self.PRETRAIN = True
         self.PRETRAIN_FULL = False  # if False, load encoder only
-        self.PRETRAIN_MODEL = './data_wd/pretrain_model/mobilenet_v2.pth'
-        # self.PRETRAIN_MODEL = './pretrain_models/mobilenet_v2-b0353104.pth'
+        #self.PRETRAIN_MODEL = './data_wd/pretrain_model/mobilenet_v2.pth'
+        self.PRETRAIN_MODEL = './pretrain_models/mobilenet_v2-b0353104.pth'
 
         self.TRAIN_TOTAL_STEPS = 100000
         self.TRAIN_START_STEP = 0
@@ -58,10 +59,10 @@ class DefaultEngineConfig():
         self.TRAIN_SGD_MOMENTUM = 0.9
         self.TRAIN_GPUS = 4
         self.TRAIN_BATCH_SIZE = 16
-        self.TRAIN_TBLOG = False
+        self.TRAIN_TBLOG = True
         self.TRAIN_TBLOG_STEP = 50
         self.TRAIN_LOG_STEP = 20
-        self.TRAIN_IMG_LOG = True
+        self.TRAIN_IMG_LOG = False
         self.TRAIN_TOP_K_PERCENT_PIXELS = 0.15
         self.TRAIN_SEQ_TRAINING_FREEZE_PARAMS = ['patch_wise_id_bank']
         self.TRAIN_SEQ_TRAINING_START_RATIO = 0.5
@@ -107,7 +108,7 @@ class DefaultEngineConfig():
         self.DIST_START_GPU = 0
 
     def init_dir(self):
-        self.DIR_DATA = '../VOS02/datasets'#'./datasets'
+        self.DIR_DATA = './datasets'  #'../VOS02/datasets'#'./datasets'
         self.DIR_DAVIS = os.path.join(self.DIR_DATA, 'DAVIS')
         self.DIR_YTB = os.path.join(self.DIR_DATA, 'YTB')
         self.DIR_STATIC = os.path.join(self.DIR_DATA, 'Static')
